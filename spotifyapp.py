@@ -42,6 +42,10 @@ if code:
     except Exception as e:
         st.error("Spotify authorization failed. Please try again.")
         st.stop()
+else:
+    auth_url = sp_oauth.get_authorize_url()
+    st.markdown(f"[Connect to Spotify]({auth_url})", unsafe_allow_html=True)
+    st.stop()
 
 # --- Helper Functions ---
 def mbti_from_genres(genres):
