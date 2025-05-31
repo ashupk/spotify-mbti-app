@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
 Created on Sun Jun  1 02:40:04 2025
-
-@author: MoodScale_Betav1.2
+Updated for Streamlit Cloud Deployment
+@author: MoodScale_Betav1.3
 """
 
 import streamlit as st
@@ -18,8 +18,8 @@ SPOTIPY_REDIRECT_URI = st.secrets["SPOTIPY_REDIRECT_URI"]
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 
 # --- Streamlit Page Setup ---
-st.set_page_config(page_title="Spotify Personality Profiler", layout="centered")
-st.title("🎧 Spotify-Based Personality Profiler - MoodScale")
+st.set_page_config(page_title="Spotify Personality Profiler - MoodScale", layout="centered")
+st.title("\U0001F3A7 Spotify-Based Personality Profiler - MoodScale")
 st.write("Connect your Spotify with MoodScale to receive a personality assessment based on your music preferences.")
 
 # --- Spotify OAuth Setup ---
@@ -32,13 +32,16 @@ sp_oauth = SpotifyOAuth(
 
 # --- Authorization Flow ---
 token_info = None
-# query_params = st.experimental_get_query_params()
 query_params = st.query_params
+code = query_params.get("code", [None])[0]
 
-if "code" in query_params:
-    code = query_params["code"][0]
-    token_info = sp_oauth.get_access_token(code)
-    st.success("Spotify connected! Generating your profile...")
+if code:
+    try:
+        token_info = sp_oauth.get_access_token(code)
+        st.success("Spotify connected! Generating your profile...")
+    except Exception as e:
+        st.error("Spotify authorization failed. Please try again.")
+        st.stop()
 
 # --- Helper Functions ---
 def mbti_from_genres(genres):
@@ -105,12 +108,12 @@ if token_info:
     results = sp.current_user_recently_played(limit=50)
     track_list = [f"{item['track']['name']} – {item['track']['artists'][0]['name']}" for item in results['items']]
 
-    st.subheader(f"Hi {display_name}, your predicted MBTI type is: 🧠 {mbti}")
-    st.subheader("📖 Personality Insight")
+    st.subheader(f"Hi {display_name}, your predicted MBTI type is: \U0001F9E0 {mbti}")
+    st.subheader("\U0001F4D6 Personality Insight")
     with st.spinner("Analyzing your taste and personality..."):
         insight = generate_personality_insight(mbti, track_list)
     st.write(insight)
 
-elif st.button("Connect to Spotify"):
+else:
     auth_url = sp_oauth.get_authorize_url()
-    st.markdown(f"[Click here to log in with Spotify]({auth_url})")
+    st.markdown(f"[Connect to Spotify]({auth_url})", unsafe_allow_html=True)
