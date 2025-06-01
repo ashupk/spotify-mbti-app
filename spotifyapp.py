@@ -33,19 +33,11 @@ sp_oauth = SpotifyOAuth(
 # --- Authorization Flow ---
 token_info = None
 query_params = st.query_params
-code = query_params.get("code", [None])[0]
 
-if code:
-    try:
-        token_info = sp_oauth.get_access_token(code)
-        st.success("Spotify connected! Generating your profile...")
-    except Exception as e:
-        st.error("Spotify authorization failed. Please try again.")
-        st.stop()
-else:
-    auth_url = sp_oauth.get_authorize_url()
-    st.markdown(f"[Connect to Spotify]({auth_url})", unsafe_allow_html=True)
-    st.stop()
+if "code" in query_params:
+    code = query_params["code"][0]
+    token_info = sp_oauth.get_access_token(code)
+    st.success("Spotify connected! Generating your profile...")
 
 # --- Helper Functions ---
 def mbti_from_genres(genres):
