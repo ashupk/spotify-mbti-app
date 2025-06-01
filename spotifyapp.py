@@ -27,7 +27,9 @@ sp_oauth = SpotifyOAuth(
     client_id=SPOTIPY_CLIENT_ID,
     client_secret=SPOTIPY_CLIENT_SECRET,
     redirect_uri=SPOTIPY_REDIRECT_URI,
-    scope='user-top-read user-read-recently-played'
+    scope='user-top-read user-read-recently-played',
+    show_dialog=True 
+    # ^^ For testing
 )
 
 # --- Authorization Flow ---
@@ -35,9 +37,15 @@ token_info = None
 query_params = st.query_params
 
 if "code" in query_params:
-    code = query_params["code"][0]
-    token_info = sp_oauth.get_access_token(code)
-    st.success("Spotify connected! Generating your profile...")
+    try:
+        code = query_params["code"][0]
+        token_info = sp_oauth.get_access_token(code)
+        st.success("Spotify connected! Generating your profile...")
+    except Exception as e:
+        st.error("Spotify authorization failed. Please try again.")
+        st.exception(e)
+        st.stop()
+
 
 # --- Helper Functions ---
 def mbti_from_genres(genres):
