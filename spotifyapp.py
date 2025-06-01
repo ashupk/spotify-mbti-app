@@ -40,11 +40,13 @@ if "code" in query_params:
     try:
         code = query_params["code"][0]
         token_info = sp_oauth.get_access_token(code)
+        st.experimental_set_query_params()  # Prevent reuse of code
         st.success("Spotify connected! Generating your profile...")
-    except Exception as e:
+    except spotipy.oauth2.SpotifyOauthError as e:
         st.error("Spotify authorization failed. Please try again.")
-        st.exception(e)
+        st.write(e)
         st.stop()
+
 
 
 # --- Helper Functions ---
