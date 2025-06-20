@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-Created on Sun Jun  1 02:40:04 2025
+Created on Sun Jun  20 2025
 Updated for Streamlit Cloud Deployment
-@author: MoodScale_Betav1.3
+@author: MoodScale_Betav1.4
 """
 
 import streamlit as st
@@ -28,26 +28,25 @@ sp_oauth = SpotifyOAuth(
     client_secret=SPOTIPY_CLIENT_SECRET,
     redirect_uri=SPOTIPY_REDIRECT_URI,
     scope='user-top-read user-read-recently-played',
-    show_dialog=True 
-    # ^^ For testing
+    show_dialog=True,
+    cache_path=".cache"  # Cache token locally
 )
 
 # --- Authorization Flow ---
-token_info = None
-query_params = st.query_params
-
-if "code" in query_params:
-    try:
-        code = query_params["code"][0]
-        token_info = sp_oauth.get_access_token(code)
-        st.experimental_set_query_params()  # Prevent reuse of code
-        st.success("Spotify connected! Generating your profile...")
-    except spotipy.oauth2.SpotifyOauthError as e:
-        st.error("Spotify authorization failed. Please try again.")
-        st.write(e)
-        st.stop()
-
-
+if "token_info" not in st.session_state:
+    query_params = st.query_params
+    if "code" in query_params:
+        try:
+            code = query_params["code"][0]
+            token_info = sp_oauth.get_access_token(code)
+            st.session_state.token_info = token_info
+            st.experimental_set_query_params()  # Clear code from URL
+            st.success("Spotify connected! Generating your profile...")
+        except spotipy.oauth2.SpotifyOauthError as e:
+            st.error("Spotify authorization failed. Please try again.")
+            st.stop()
+else:
+    token_info = st.session_state.token_info
 
 # --- Helper Functions ---
 def mbti_from_genres(genres):
@@ -84,7 +83,7 @@ You are a psychologist with expertise in personality and music psychology.
 A person has the Myers-Briggs personality type: {mbti_type}
 Here are the last 50 songs this person has listened to:
 {track_info}
-Based on the MBTI type and the songs, write a 6-8 line personality assessment. Focus on emotional depth, introspective qualities, thinking style, and social preferences. Write it in second person ("You are someone who...").
+Based on the MBTI type and the songs, write a 6-8 line personality assessment. Focus on emotional depth, introspective qualities, thinking style, and social preferences. Write it in second person (\"You are someone who...\").
 """
     response = client.chat.completions.create(
         model="gpt-4",
@@ -119,7 +118,6 @@ if token_info:
     with st.spinner("Analyzing your taste and personality..."):
         insight = generate_personality_insight(mbti, track_list)
     st.write(insight)
-
 else:
     auth_url = sp_oauth.get_authorize_url()
     st.markdown(f"[Connect to Spotify]({auth_url})", unsafe_allow_html=True)
