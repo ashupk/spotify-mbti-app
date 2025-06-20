@@ -11,6 +11,9 @@ from spotipy.oauth2 import SpotifyOAuth
 from collections import Counter
 from openai import OpenAI
 
+# Prevent NameError
+token_info = None
+
 # --- CONFIGURATION ---
 SPOTIPY_CLIENT_ID = st.secrets["SPOTIPY_CLIENT_ID"]
 SPOTIPY_CLIENT_SECRET = st.secrets["SPOTIPY_CLIENT_SECRET"]
