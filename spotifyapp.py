@@ -39,15 +39,12 @@ sp_oauth = SpotifyOAuth(
 if "token_info" not in st.session_state:
     query_params = st.query_params
     if "code" in query_params:
-        try:
-            code = query_params["code"][0]
-            token_info = sp_oauth.get_access_token(code)
-            st.session_state.token_info = token_info
-            st.experimental_set_query_params()  # Clear code from URL
-            st.success("Spotify connected! Generating your profile...")
-        except spotipy.oauth2.SpotifyOauthError as e:
-            st.error("Spotify authorization failed. Please try again.")
-            st.stop()
+        code = query_params["code"][0]
+        token_info = sp_oauth.get_access_token(code)
+        st.session_state.token_info = token_info
+        st.experimental_set_query_params()  # Clear code from URL
+        st.success("Spotify connected! Generating your profile...")
+        
 else:
     token_info = st.session_state.token_info
 
