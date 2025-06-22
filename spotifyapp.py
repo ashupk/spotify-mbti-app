@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-Created on Sun Jun  22 2025
-Updated for Streamlit Cloud Deployment - FIXED OpenAI Client Usage
-@author: MoodScale_Betav1.5
+Created on Sun Jun  20 2025
+Updated for OpenAI SDK v1.0+ and Streamlit Cloud Deployment
+@author: MoodScale_Betav1.4
 """
 
 import streamlit as st
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 from collections import Counter
-import openai  # Correct import for OpenAI
+from openai import OpenAI  # ✅ Correct usage for OpenAI v1.0+
 
 # Prevent NameError
 token_info = None
@@ -79,7 +79,7 @@ def mbti_from_genres(genres):
     return mbti
 
 def generate_personality_insight(mbti_type, track_list):
-    openai.api_key = OPENAI_API_KEY  # ✅ Correct way to set the API key
+    client = OpenAI(api_key=OPENAI_API_KEY)  # ✅ use OpenAI v1.x client
     track_info = '\n'.join([f"{i+1}. {track}" for i, track in enumerate(track_list)])
     prompt = f"""
 You are a psychologist with expertise in personality and music psychology.
@@ -88,14 +88,14 @@ Here are the last 50 songs this person has listened to:
 {track_info}
 Based on the MBTI type and the songs, write a 6-8 line personality assessment. Focus on emotional depth, introspective qualities, thinking style, and social preferences. Write it in second person ("You are someone who...").
 """
-    response = openai.ChatCompletion.create(
+    response = client.chat.completions.create(
         model="gpt-4",
         messages=[
             {"role": "system", "content": "You are a psychological profiler skilled in behavioral and music-based personality assessment."},
             {"role": "user", "content": prompt}
         ]
     )
-    return response.choices[0].message["content"].strip()
+    return response.choices[0].message.content.strip()
 
 # --- Main App Logic ---
 if token_info:
