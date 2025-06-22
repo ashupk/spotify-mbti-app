@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-Created on Sun Jun  20 2025
-Updated for Streamlit Cloud Deployment
-@author: MoodScale_Betav1.4
+Created on Sun Jun  22 2025
+Updated for Streamlit Cloud Deployment - FIXED OpenAI Client Usage
+@author: MoodScale_Betav1.5
 """
 
 import streamlit as st
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 from collections import Counter
-from openai import OpenAI
+import openai  # Correct import for OpenAI
 
 # Prevent NameError
 token_info = None
@@ -32,7 +32,7 @@ sp_oauth = SpotifyOAuth(
     redirect_uri=SPOTIPY_REDIRECT_URI,
     scope='user-top-read user-read-recently-played',
     show_dialog=True,
-    cache_path=".cache"  # Cache token locally
+    cache_path=".cache"
 )
 
 # --- Authorization Flow ---
@@ -42,13 +42,12 @@ if "token_info" not in st.session_state:
         try:
             code = query_params["code"]
             token_info = sp_oauth.get_access_token(code)
-            # st.experimental_set_query_params()  # Prevent reuse of code
+            st.session_state.token_info = token_info
             st.success("Spotify connected! Generating your profile...")
         except spotipy.oauth2.SpotifyOauthError as e:
             st.error("Spotify authorization failed. Please try again.")
             st.write(e)
             st.stop()
-        
 else:
     token_info = st.session_state.token_info
 
@@ -80,23 +79,23 @@ def mbti_from_genres(genres):
     return mbti
 
 def generate_personality_insight(mbti_type, track_list):
-    client = OpenAI(api_key=OPENAI_API_KEY)
+    openai.api_key = OPENAI_API_KEY  # ✅ Correct way to set the API key
     track_info = '\n'.join([f"{i+1}. {track}" for i, track in enumerate(track_list)])
     prompt = f"""
 You are a psychologist with expertise in personality and music psychology.
 A person has the Myers-Briggs personality type: {mbti_type}
 Here are the last 50 songs this person has listened to:
 {track_info}
-Based on the MBTI type and the songs, write a 6-8 line personality assessment. Focus on emotional depth, introspective qualities, thinking style, and social preferences. Write it in second person (\"You are someone who...\").
+Based on the MBTI type and the songs, write a 6-8 line personality assessment. Focus on emotional depth, introspective qualities, thinking style, and social preferences. Write it in second person ("You are someone who...").
 """
-    response = client.chat.completions.create(
+    response = openai.ChatCompletion.create(
         model="gpt-4",
         messages=[
             {"role": "system", "content": "You are a psychological profiler skilled in behavioral and music-based personality assessment."},
             {"role": "user", "content": prompt}
         ]
     )
-    return response.choices[0].message.content.strip()
+    return response.choices[0].message["content"].strip()
 
 # --- Main App Logic ---
 if token_info:
