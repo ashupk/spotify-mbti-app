@@ -1,31 +1,29 @@
 # -*- coding: utf-8 -*-
 """
-Spotify-Based Personality Profiler - MoodScale
-Fully Streamlit-compatible | OpenAI SDK v1.x safe
+Spotify-Based Personality Profiler - MoodScale (OpenAI SDK v0.28 Compatible)
 """
 
 import streamlit as st
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 from collections import Counter
-import os
-from openai import OpenAI
+import openai  # ✅ Compatible with v0.28
 
-# --- Load secrets from Streamlit Cloud or local .toml ---
+# --- Load secrets from Streamlit Cloud ---
 SPOTIPY_CLIENT_ID = st.secrets["SPOTIPY_CLIENT_ID"]
 SPOTIPY_CLIENT_SECRET = st.secrets["SPOTIPY_CLIENT_SECRET"]
 SPOTIPY_REDIRECT_URI = st.secrets["SPOTIPY_REDIRECT_URI"]
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 
-# --- Set API key as environment variable (for OpenAI client compatibility) ---
-os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
+# --- Set OpenAI key (old SDK method) ---
+openai.api_key = OPENAI_API_KEY
 
-# --- Streamlit page config ---
+# --- Streamlit setup ---
 st.set_page_config(page_title="Spotify Personality Profiler", layout="centered")
 st.title("🎧 Spotify-Based Personality Profiler")
 st.markdown("Connect your Spotify to receive a personality assessment based on your music preferences.")
 
-# --- Spotify OAuth setup ---
+# --- Spotify OAuth ---
 sp_oauth = SpotifyOAuth(
     client_id=SPOTIPY_CLIENT_ID,
     client_secret=SPOTIPY_CLIENT_SECRET,
@@ -35,10 +33,10 @@ sp_oauth = SpotifyOAuth(
     cache_path=".cache"
 )
 
-# --- Initialize token_info ---
+# --- Initialize ---
 token_info = None
 
-# --- Handle Spotify redirect ---
+# --- Spotify Auth Flow ---
 if "token_info" not in st.session_state:
     query_params = st.query_params
     if "code" in query_params:
@@ -53,7 +51,7 @@ if "token_info" not in st.session_state:
 else:
     token_info = st.session_state.token_info
 
-# --- MBTI prediction from genres ---
+# --- MBTI generator ---
 def mbti_from_genres(genres):
     traits = {'I': 0, 'E': 0, 'N': 0, 'S': 0, 'T': 0, 'F': 0, 'J': 0, 'P': 0}
     for genre in genres:
@@ -72,6 +70,7 @@ def mbti_from_genres(genres):
             traits['I'] += 1; traits['F'] += 1; traits['J'] += 1
         elif genre in ['alternative']:
             traits['I'] += 1; traits['N'] += 1; traits['T'] += 1; traits['P'] += 1
+
     return (
         ('I' if traits['I'] >= traits['E'] else 'E') +
         ('N' if traits['N'] >= traits['S'] else 'S') +
@@ -79,9 +78,8 @@ def mbti_from_genres(genres):
         ('J' if traits['J'] >= traits['P'] else 'P')
     )
 
-# --- OpenAI-based personality insight ---
+# --- OpenAI personality insight ---
 def generate_personality_insight(mbti, track_list):
-    client = OpenAI()
     track_info = "\n".join([f"{i+1}. {track}" for i, track in enumerate(track_list)])
     prompt = f"""
 You are a psychologist with expertise in personality and music psychology.
@@ -91,14 +89,14 @@ These are the last 50 tracks they listened to:
 
 Based on this, write a 6-8 line personality insight using "You are someone who..." style.
 """
-    response = client.chat.completions.create(
+    response = openai.ChatCompletion.create(
         model="gpt-4",
         messages=[
-            {"role": "system", "content": "You are a personality profiler skilled in interpreting music preferences."},
+            {"role": "system", "content": "You are a music-savvy personality profiler."},
             {"role": "user", "content": prompt}
         ]
     )
-    return response.choices[0].message.content.strip()
+    return response.choices[0].message["content"].strip()
 
 # --- Main logic ---
 if token_info:
@@ -106,15 +104,17 @@ if token_info:
     profile = sp.current_user()
     display_name = profile.get("display_name", "there")
 
+    # Top genres
     top_artists = sp.current_user_top_artists(limit=20, time_range="medium_term")
     genres = [genre for artist in top_artists["items"] for genre in artist["genres"]]
     top_genres = [genre for genre, _ in Counter(genres).most_common(10)]
 
+    # Recently played
     recent_tracks = sp.current_user_recently_played(limit=50)
     track_list = [f"{item['track']['name']} – {item['track']['artists'][0]['name']}" for item in recent_tracks["items"]]
 
+    # MBTI + Insight
     mbti = mbti_from_genres(top_genres)
-
     st.subheader(f"Hi {display_name}, your predicted MBTI type is: 🧠 {mbti}")
     st.subheader("📖 Personality Insight")
 
@@ -122,7 +122,6 @@ if token_info:
         insight = generate_personality_insight(mbti, track_list)
 
     st.write(insight)
-
 else:
     auth_url = sp_oauth.get_authorize_url()
     st.markdown(f"[Connect to Spotify]({auth_url})", unsafe_allow_html=True)
