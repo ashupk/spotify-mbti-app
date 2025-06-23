@@ -15,6 +15,8 @@ SPOTIPY_CLIENT_SECRET = st.secrets["SPOTIPY_CLIENT_SECRET"]
 SPOTIPY_REDIRECT_URI = st.secrets["SPOTIPY_REDIRECT_URI"]
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 
+token_info = None  # ✅ Define token_info to avoid NameError
+
 # --- Streamlit Page Setup ---
 st.set_page_config(page_title="Spotify Personality Profiler - MoodScale", layout="centered")
 st.title("🎧 Spotify-Based Personality Profiler - MoodScale")
