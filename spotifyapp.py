@@ -8,12 +8,26 @@ import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 from collections import Counter
 import openai  # ✅ Compatible with v0.28
+import uuid
+
+# Generate unique cache per user session
+if "uuid" not in st.session_state:
+    st.session_state.uuid = str(uuid.uuid4())
 
 # --- Load secrets from Streamlit Cloud ---
 SPOTIPY_CLIENT_ID = st.secrets["SPOTIPY_CLIENT_ID"]
 SPOTIPY_CLIENT_SECRET = st.secrets["SPOTIPY_CLIENT_SECRET"]
 SPOTIPY_REDIRECT_URI = st.secrets["SPOTIPY_REDIRECT_URI"]
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
+
+sp_oauth = SpotifyOAuth(
+    client_id=SPOTIPY_CLIENT_ID,
+    client_secret=SPOTIPY_CLIENT_SECRET,
+    redirect_uri=SPOTIPY_REDIRECT_URI,
+    scope='user-top-read user-read-recently-played',
+    show_dialog=True,
+    cache_path=f".cache-{st.session_state.uuid}"  # ✅ unique cache path
+)
 
 # --- Set OpenAI key (old SDK method) ---
 openai.api_key = OPENAI_API_KEY
@@ -53,6 +67,9 @@ else:
 
 # --- MBTI generator ---
 def mbti_from_genres(genres):
+    if not genres:
+        return "Unknown"
+
     traits = {'I': 0, 'E': 0, 'N': 0, 'S': 0, 'T': 0, 'F': 0, 'J': 0, 'P': 0}
     for genre in genres:
         genre = genre.lower()
@@ -104,27 +121,38 @@ if token_info:
     profile = sp.current_user()
     display_name = profile.get("display_name", "there")
 
-    # Top genres
+    # ✅ Debug: Confirm the logged-in user
+    st.write("🔐 Spotify profile ID:", profile.get("id"))
+    st.write("👤 Spotify display name:", display_name)
+
+    # Get top artist genres
     top_artists = sp.current_user_top_artists(limit=20, time_range="medium_term")
     genres = [genre for artist in top_artists["items"] for genre in artist["genres"]]
     top_genres = [genre for genre, _ in Counter(genres).most_common(10)]
 
-    # Recently played
+    # ✅ Debug: Show genres used for MBTI
+    st.write("🎵 Top genres:", top_genres)
+
+    # Get recently played tracks
     recent_tracks = sp.current_user_recently_played(limit=50)
-    track_list = [f"{item['track']['name']} – {item['track']['artists'][0]['name']}" for item in recent_tracks["items"]]
+    track_list = [
+        f"{item['track']['name']} – {item['track']['artists'][0]['name']}"
+        for item in recent_tracks["items"]
+    ]
 
-    # MBTI + Insight
+    # Predict MBTI
     mbti = mbti_from_genres(top_genres)
-    st.subheader(f"Hi {display_name}, your predicted MBTI type is: 🧠 {mbti}")
-    st.subheader("📖 Personality Insight")
 
-    # Testing
-    print(display_name)
+    if mbti == "Unknown":
+        st.warning("Not enough genre data available to determine MBTI.")
+    else:
+        st.subheader(f"Hi {display_name}, your predicted MBTI type is: 🧠 {mbti}")
+        st.subheader("📖 Personality Insight")
 
-    # with st.spinner("Analyzing your music taste..."):
-    #     insight = generate_personality_insight(mbti, track_list)
+        with st.spinner("Analyzing your music taste..."):
+            insight = generate_personality_insight(mbti, track_list)
 
-    # st.write(insight)
+        st.write(insight)
 else:
     auth_url = sp_oauth.get_authorize_url()
     st.markdown(f"[Connect to Spotify]({auth_url})", unsafe_allow_html=True)
