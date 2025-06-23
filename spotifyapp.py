@@ -118,10 +118,13 @@ if token_info:
     st.subheader(f"Hi {display_name}, your predicted MBTI type is: 🧠 {mbti}")
     st.subheader("📖 Personality Insight")
 
-    with st.spinner("Analyzing your music taste..."):
-        insight = generate_personality_insight(mbti, track_list)
+    # Testing
+    print(display_name)
 
-    st.write(insight)
+    # with st.spinner("Analyzing your music taste..."):
+    #     insight = generate_personality_insight(mbti, track_list)
+
+    # st.write(insight)
 else:
     auth_url = sp_oauth.get_authorize_url()
     st.markdown(f"[Connect to Spotify]({auth_url})", unsafe_allow_html=True)
