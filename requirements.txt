@@ -1,3 +1,5 @@
 streamlit
 spotipy
 openai==0.28
+numpy      # used for the radar maths
+matplotlib # used for the radar plot
