@@ -1,144 +1,218 @@
 # -*- coding: utf-8 -*-
 """
-Spotify-Based Personality Profiler - MoodScale (OpenAI SDK v0.28 Compatible)
+Spotify‑Based Personality Profiler ‑ MoodScale (MBTI + OCEAN)
+This Streamlit app connects to a user’s Spotify account, retrieves top genres and
+recent tracks, predicts both MBTI and Big‑5 (OCEAN) traits, visualises the Big‑5
+as a radar chart, and produces an AI‑generated personality insight.
 """
 
-import streamlit as st
+import os
+import uuid
+import pathlib
+from collections import Counter
+
+import numpy as np
+import matplotlib.pyplot as plt
+import openai
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
-from collections import Counter
-import openai
-import uuid
-import os
+import streamlit as st
 
-# --- Load secrets ---
+# ───────────────────────────  Secrets & Keys  ────────────────────────────
 SPOTIPY_CLIENT_ID = st.secrets["SPOTIPY_CLIENT_ID"]
 SPOTIPY_CLIENT_SECRET = st.secrets["SPOTIPY_CLIENT_SECRET"]
 SPOTIPY_REDIRECT_URI = st.secrets["SPOTIPY_REDIRECT_URI"]
-OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
-openai.api_key = OPENAI_API_KEY
+openai.api_key = st.secrets["OPENAI_API_KEY"]
 
-# --- Streamlit UI setup ---
+# ────────────────────────────  Page Set‑up  ─────────────────────────────
 st.set_page_config(page_title="Spotify Personality Profiler", layout="centered")
-st.title("🎧 Spotify-Based Personality Profiler")
-st.markdown("Connect your Spotify to receive a personality assessment based on your music preferences.")
+st.title("🎧 Spotify‑Based Personality Profiler")
+st.markdown(
+    "Link your Spotify account to reveal an **MBTI** prediction *and* a Big‑5 "
+    "(**OCEAN**) snapshot based on your listening habits."
+)
 
-# --- Manual Logout Button ---
+# ────────────────────────────  Logout Button  ───────────────────────────
 if st.button("🔓 Logout & Clear Session"):
-    for file in os.listdir():
-        if file.startswith(".cache"):
-            os.remove(file)
+    if "sid" in st.session_state:
+        cache = pathlib.Path(f".cache-{st.session_state['sid']}")
+        if cache.exists():
+            cache.unlink()
     st.session_state.clear()
     st.success("Logged out. Please reload the app.")
     st.stop()
 
-# --- Generate session token for cache isolation ---
-session_id = str(uuid.uuid4())  # unique per run
-sp_oauth = SpotifyOAuth(
+# ───────────────────────  Session‑scoped Cache File  ─────────────────────
+if "sid" not in st.session_state:
+    st.session_state["sid"] = str(uuid.uuid4())
+cache_path = f".cache-{st.session_state['sid']}"
+
+# ───────────────────────────  Spotify OAuth  ────────────────────────────
+auth_manager = SpotifyOAuth(
     client_id=SPOTIPY_CLIENT_ID,
     client_secret=SPOTIPY_CLIENT_SECRET,
     redirect_uri=SPOTIPY_REDIRECT_URI,
-    scope='user-top-read user-read-recently-played',
-    show_dialog=True,  # ✅ forces fresh Spotify login
-    cache_path=f".cache-{session_id}"
+    scope="user-top-read user-read-recently-played",
+    cache_path=cache_path,
+    show_dialog=False,
 )
 
-# --- Spotify Auth Flow ---
-token_info = None
-if "token_info" not in st.session_state:
-    query_params = st.query_params
-    if "code" in query_params:
-        try:
-            code = query_params["code"]
-            token_info = sp_oauth.get_access_token(code)
-            st.session_state.token_info = token_info
-            st.success("Spotify connected! Generating your profile...")
-        except spotipy.oauth2.SpotifyOauthError as e:
-            st.error("Spotify authorization failed. Please try again.")
-            st.stop()
-else:
-    token_info = st.session_state.token_info
+try:
+    sp = spotipy.Spotify(auth_manager=auth_manager)
+except spotipy.oauth2.SpotifyOauthError:
+    st.error("Spotify authorisation failed. Please try again.")
+    st.stop()
 
-# --- MBTI Logic ---
+# ──────────────────────────  Helper Functions  ──────────────────────────
+
 def mbti_from_genres(genres):
+    """Very light‑weight heuristic to map genres → MBTI."""
     if not genres:
         return "Unknown"
-    traits = {'I': 0, 'E': 0, 'N': 0, 'S': 0, 'T': 0, 'F': 0, 'J': 0, 'P': 0}
-    for genre in genres:
-        genre = genre.lower()
-        if genre in ['indie', 'folk', 'ambient', 'lo-fi']:
-            traits['I'] += 1; traits['N'] += 1; traits['F'] += 1; traits['P'] += 1
-        elif genre in ['pop', 'dance pop', 'electropop', 'k-pop']:
-            traits['E'] += 1; traits['S'] += 1; traits['F'] += 1; traits['J'] += 1
-        elif genre in ['hip hop', 'rap', 'trap']:
-            traits['E'] += 1; traits['S'] += 1; traits['T'] += 1; traits['P'] += 1
-        elif genre in ['classical', 'jazz', 'instrumental']:
-            traits['I'] += 1; traits['N'] += 1; traits['T'] += 1; traits['J'] += 1
-        elif genre in ['rock', 'metal', 'punk']:
-            traits['E'] += 1; traits['S'] += 1; traits['T'] += 1; traits['P'] += 1
-        elif genre in ['r&b', 'soul']:
-            traits['I'] += 1; traits['F'] += 1; traits['J'] += 1
-        elif genre in ['alternative']:
-            traits['I'] += 1; traits['N'] += 1; traits['T'] += 1; traits['P'] += 1
+    t = {k: 0 for k in "IENS TFJP".replace(" ", "")}
+    for g in genres:
+        g = g.lower()
+        if g in ["indie", "folk", "ambient", "lo-fi"]:
+            t["I"] += 1; t["N"] += 1; t["F"] += 1; t["P"] += 1
+        elif g in ["pop", "dance pop", "electropop", "k-pop"]:
+            t["E"] += 1; t["S"] += 1; t["F"] += 1; t["J"] += 1
+        elif g in ["hip hop", "rap", "trap"]:
+            t["E"] += 1; t["S"] += 1; t["T"] += 1; t["P"] += 1
+        elif g in ["classical", "jazz", "instrumental"]:
+            t["I"] += 1; t["N"] += 1; t["T"] += 1; t["J"] += 1
+        elif g in ["rock", "metal", "punk"]:
+            t["E"] += 1; t["S"] += 1; t["T"] += 1; t["P"] += 1
+        elif g in ["r&b", "soul"]:
+            t["I"] += 1; t["F"] += 1; t["J"] += 1
+        elif g in ["alternative"]:
+            t["I"] += 1; t["N"] += 1; t["T"] += 1; t["P"] += 1
     return (
-        ('I' if traits['I'] >= traits['E'] else 'E') +
-        ('N' if traits['N'] >= traits['S'] else 'S') +
-        ('T' if traits['T'] >= traits['F'] else 'F') +
-        ('J' if traits['J'] >= traits['P'] else 'P')
+        ("I" if t["I"] >= t["E"] else "E") +
+        ("N" if t["N"] >= t["S"] else "S") +
+        ("T" if t["T"] >= t["F"] else "F") +
+        ("J" if t["J"] >= t["P"] else "P")
     )
 
-# --- Personality Insight via OpenAI ---
-def generate_personality_insight(mbti, track_list):
-    track_info = "\n".join([f"{i+1}. {track}" for i, track in enumerate(track_list)])
+# ─────────────  Genre → OCEAN weight matrix (1 low → 5 high)  ────────────
+OCEAN_WEIGHTS = {
+    # Openness, Conscientiousness, Extraversion, Agreeableness, Neuroticism
+    "indie"       : (4, 1, 2, 2, 1),
+    "lo-fi"       : (4, 1, 1, 2, 1),
+    "classical"   : (5, 4, 1, 3, 1),
+    "jazz"        : (5, 3, 2, 3, 1),
+    "alt rock"    : (4, 2, 3, 2, 2),
+    "rock"        : (3, 2, 4, 2, 2),
+    "metal"       : (2, 2, 4, 1, 3),
+    "hip hop"     : (2, 2, 4, 2, 2),
+    "trap"        : (2, 1, 4, 2, 3),
+    "pop"         : (3, 3, 4, 3, 2),
+    "dance pop"   : (2, 3, 5, 3, 1),
+    "edm"         : (3, 2, 5, 2, 1),
+    "r&b"         : (3, 2, 3, 4, 2),
+    "soul"        : (4, 2, 3, 4, 1),
+    "folk"        : (4, 2, 2, 4, 1),
+    "ambient"     : (4, 1, 1, 3, 1),
+    "punk"        : (2, 2, 4, 1, 3),
+    "electropop"  : (3, 3, 5, 3, 1),
+    "k-pop"       : (3, 3, 5, 3, 2),
+}
+
+
+def ocean_from_genres(genres):
+    """Return 5 scaled Big‑5 scores (0‑100)."""
+    trait_totals = np.zeros(5)
+    hits = 0
+    for g in genres:
+        g = g.lower()
+        if g in OCEAN_WEIGHTS:
+            trait_totals += np.array(OCEAN_WEIGHTS[g])
+            hits += 1
+    if hits == 0:
+        return np.array([50] * 5)
+    means = trait_totals / hits  # 1‑5 scale
+    return np.interp(means, (1, 5), (20, 80)).round(1)
+
+
+def radar_chart(scores):
+    labels = ["Openness", "Conscientious.", "Extraversion",
+              "Agreeableness", "Neuroticism"]
+    angles = np.linspace(0, 2 * np.pi, len(labels), endpoint=False)
+    values = np.concatenate((scores, [scores[0]]))
+    angles = np.concatenate((angles, [angles[0]]))
+
+    fig, ax = plt.subplots(figsize=(4, 4), subplot_kw=dict(polar=True))
+    ax.plot(angles, values, linewidth=2)
+    ax.fill(angles, values, alpha=0.25)
+    ax.set_xticks(angles[:-1])
+    ax.set_xticklabels(labels, fontsize=9)
+    ax.set_ylim(0, 100)
+    ax.set_title("Big‑5 Personality Radar", pad=20, fontsize=12)
+    st.pyplot(fig)
+
+
+def generate_personality_insight(mbti, ocean_scores, tracks):
+    track_snippet = "\n".join(f"{i+1}. {t}" for i, t in enumerate(tracks[:20]))
+    ocean_text = ", ".join([
+        f"Openness {ocean_scores[0]}",
+        f"Conscientiousness {ocean_scores[1]}",
+        f"Extraversion {ocean_scores[2]}",
+        f"Agreeableness {ocean_scores[3]}",
+        f"Neuroticism {ocean_scores[4]}"
+    ])
+
     prompt = f"""
 You are a psychologist with expertise in personality and music psychology.
 A person has the MBTI type: {mbti}
-These are the last 50 tracks they listened to:
-{track_info}
+Their Big‑5 trait scores are: {ocean_text}
+Here are 20 of their recent tracks:
+{track_snippet}
 
-Based on this, write a 6-8 line personality insight using "You are someone who..." style.
+Write an 8‑line personality insight using "You are someone who..." style.
 """
-    response = openai.ChatCompletion.create(
-        model="gpt-4",
+    rsp = openai.ChatCompletion.create(
+        model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": "You are a music-savvy personality profiler."},
-            {"role": "user", "content": prompt}
-        ]
+            {"role": "system", "content": "You are a music‑savvy personality profiler."},
+            {"role": "user", "content": prompt},
+        ],
     )
-    return response.choices[0].message["content"].strip()
+    return rsp.choices[0].message["content"].strip()
 
-# --- Main logic ---
-if token_info:
-    sp = spotipy.Spotify(auth=token_info["access_token"])
+# ─────────────────────────────  Main Flow  ──────────────────────────────
+try:
     profile = sp.current_user()
-    display_name = profile.get("display_name", "there")
-    st.write("👤 Logged in as:", display_name)
-    st.write("🆔 Spotify ID:", profile.get("id"))
+except spotipy.exceptions.SpotifyException:
+    st.error("Could not fetch profile data. Please reconnect Spotify.")
+    st.stop()
 
-    # Top genres
-    top_artists = sp.current_user_top_artists(limit=20, time_range="medium_term")
-    genres = [genre for artist in top_artists["items"] for genre in artist["genres"]]
-    top_genres = [genre for genre, _ in Counter(genres).most_common(10)]
-    st.write("🎵 Top genres used:", top_genres)
+name = profile.get("display_name", "there")
+st.write("👤 Logged in as:", name)
+st.write("🆔 Spotify ID:", profile.get("id"))
 
-    # Recently played tracks
-    recent_tracks = sp.current_user_recently_played(limit=50)
-    track_list = [
-        f"{item['track']['name']} – {item['track']['artists'][0]['name']}"
-        for item in recent_tracks["items"]
-    ]
+# Fetch top genres
+artists = sp.current_user_top_artists(limit=20, time_range="medium_term")
+raw_genres = [g for a in artists["items"] for g in a["genres"]]
+top_genres = [g for g, _ in Counter(raw_genres).most_common(10)]
+st.write("🎵 Top genres detected:", top_genres or "No genre data")
 
-    # Predict MBTI
-    mbti = mbti_from_genres(top_genres)
-    if mbti == "Unknown":
-        st.warning("Not enough genre data available to determine MBTI.")
-    else:
-        st.subheader(f"Hi {display_name}, your predicted MBTI type is: 🧠 {mbti}")
-        st.subheader("📖 Personality Insight")
+# Fetch recent tracks
+t_recent = sp.current_user_recently_played(limit=50)
+tracks = [f"{i['track']['name']} – {i['track']['artists'][0]['name']}" for i in t_recent["items"]]
 
-        with st.spinner("Analyzing your music taste..."):
-            insight = generate_personality_insight(mbti, track_list)
-        st.write(insight)
+# MBTI & OCEAN
+mbti = mbti_from_genres(top_genres)
+ocean = ocean_from_genres(top_genres)
+
+if mbti != "Unknown":
+    st.subheader(f"🧠 MBTI Prediction: **{mbti}**")
 else:
-    auth_url = sp_oauth.get_authorize_url()
-    st.markdown(f"[Connect to Spotify]({auth_url})", unsafe_allow_html=True)
+    st.warning("Not enough genre data to determine MBTI.")
+
+st.subheader("🌊 Big‑5 (OCEAN) Profile")
+radar_chart(ocean)
+
+with st.spinner("🔍 Generating personality insight..."):
+    insight = generate_personality_insight(mbti, ocean, tracks)
+
+st.subheader("📖 Personality Insight")
+st.write(insight)
